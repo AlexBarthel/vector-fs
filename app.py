@@ -5,101 +5,58 @@ import io
 
 app = Flask(__name__)
 
-SATELLITE_URL = "https://mt.google.com/vt/lyrs=s"
-TERRAIN_URL = "https://mt.google.com/vt/lyrs=t"
+TILE_SIZE = 32
 
-@app.route('/get_chunk_satellite', methods=['GET'])
-def get_chunk_satellite():
+@app.route('/geo/chunk', methods=['GET'])
+def geo_get_chunk():
     x = request.args.get('x', type=int)
     y = request.args.get('y', type=int)
-    zoom = request.args.get('zoom', type=int)
+    zoom = 4
 
-    if x is None or y is None or zoom is None:
-        return jsonify({"error": "Missing parameters: x, y, and zoom are required"}), 400
-    
-    tile_url = f"{SATELLITE_URL}&x={x}&y={y}&z={zoom}"
-    
-    try:
-        response = requests.get(tile_url, stream=True)
-        response.raise_for_status()
-        
-        image = Image.open(io.BytesIO(response.content))
-        
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        
-        width, height = image.size
-        
-        pixels = []
-        pixel_data = image.load()
-        
-        for py in range(height):
-            row = []
-            for px in range(width):
-                r, g, b = pixel_data[px, py]
-                row.append([r, g, b])
-            pixels.append(row)
-        
-        return jsonify({
-            "status": "success",
-            "x": x,
-            "y": y,
-            "zoom": zoom,
-            "width": width,
-            "height": height,
-            "pixels": pixels
-        })
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": f"Failed to fetch tile: {str(e)}"}), 500
-    except Exception as e:
-        return jsonify({"error": f"Image processing error: {str(e)}"}), 500
+    sat_tile = f"https://mt.google.com/vt/lyrs=s&x={x}&y={y}&z={zoom}"
+    ter_tile = f"https://mt.google.com/vt/lyrs=t&x={x}&y={y}&z={zoom}"
 
-@app.route('/get_chunk_terrain', methods=['GET'])
-def get_chunk_terrain():
-    x = request.args.get('x', type=int)
-    y = request.args.get('y', type=int)
-    zoom = request.args.get('zoom', type=int)
+    sat_response = requests.get(sat_tile)
+    ter_response = requests.get(ter_tile)
 
-    if x is None or y is None or zoom is None:
-        return jsonify({"error": "Missing parameters: x, y, and zoom are required"}), 400
+    sat_image = Image.open(io.BytesIO(sat_response.content))
+    ter_image = Image.open(io.BytesIO(ter_response.content))
+        
+    if sat_image.mode != 'RGB':
+        sat_image = sat_image.convert('RGB')
+        
+    if ter_image.mode != 'RGB':
+        ter_image = ter_image.convert('RGB')
+        
+    sat_image = sat_image.resize((TILE_SIZE, TILE_SIZE))
+    ter_image = ter_image.resize((TILE_SIZE, TILE_SIZE))
+
+    satellite = []
+        
+    width, height = sat_image.size
+    sat_data = sat_image.load()
+
+    for py in range(height):
+        row = []
+        for px in range(width):
+            r, g, b = sat_data[px, py]
+            row.append([r, g, b])
+        satellite.append(row)
+
+    terrain = []
+    width, height = ter_image.size
+    ter_data = ter_image.load()
+    for py in range(height):
+        row = []
+        for px in range(width):
+            r, g, b = ter_data[px, py]
+            row.append([r, g, b])
+        terrain.append(row)
     
-    tile_url = f"{TERRAIN_URL}&x={x}&y={y}&z={zoom}"
-    
-    try:
-        response = requests.get(tile_url, stream=True)
-        response.raise_for_status()
-        
-        image = Image.open(io.BytesIO(response.content))
-        
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        
-        width, height = image.size
-        
-        pixels = []
-        pixel_data = image.load()
-        
-        for py in range(height):
-            row = []
-            for px in range(width):
-                r, g, b = pixel_data[px, py]
-                row.append([r, g, b])
-            pixels.append(row)
-        
-        return jsonify({
-            "status": "success",
-            "x": x,
-            "y": y,
-            "zoom": zoom,
-            "width": width,
-            "height": height,
-            "pixels": pixels
-        })
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": f"Failed to fetch tile: {str(e)}"}), 500
-    except Exception as e:
-        return jsonify({"error": f"Image processing error: {str(e)}"}), 500
+    return jsonify({
+        "satellite": satellite,
+        "terrain": terrain,
+    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
-
